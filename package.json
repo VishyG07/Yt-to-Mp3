@@ -1,0 +1,20 @@
+{
+  "name": "youtube-to-mp3-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot to download YouTube videos and convert them to MP3",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ffmpeg-static": "^5.2.0",
+    "grammy": "^1.21.1",
+    "sanitize-filename": "^1.6.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}

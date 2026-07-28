@@ -1,0 +1,16 @@
+# Dependency directories
+node_modules/
+
+# Local env file containing bot token
+.env
+
+# Downloaded yt-dlp binaries
+yt-dlp
+yt-dlp.exe
+
+# Temporary files (MP3s, thumbnails)
+temp/
+
+# OS metadata files
+.DS_Store
+Thumbs.db

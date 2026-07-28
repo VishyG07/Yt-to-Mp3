@@ -192,6 +192,17 @@ bot.on('message:text', async (ctx) => {
     // Start bot polling
     bot.start();
     console.log('[Bot] Bot is running and polling for updates! Press Ctrl+C to stop.');
+
+    // Start a simple HTTP server for Render.com port binding and uptime checks
+    const http = require('http');
+    const PORT = process.env.PORT || 8080;
+    http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('YouTube to MP3 Telegram Bot is active and running!');
+    }).listen(PORT, () => {
+      console.log(`[Server] Web server listening on port ${PORT}`);
+    });
+
   } catch (error) {
     console.error('[Bot] Failed to start bot:', error);
     process.exit(1);

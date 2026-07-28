@@ -32,6 +32,21 @@ function runExec(file, args, options = {}) {
 }
 
 /**
+ * Checks for a cookies.txt file locally or in Render's secret mount folder.
+ */
+function getCookiesPath() {
+  const localCookies = path.join(__dirname, 'cookies.txt');
+  const secretCookies = '/etc/secrets/cookies.txt';
+
+  if (fs.existsSync(localCookies)) {
+    return localCookies;
+  } else if (fs.existsSync(secretCookies)) {
+    return secretCookies;
+  }
+  return null;
+}
+
+/**
  * Ensures yt-dlp binary is present in the project directory.
  * If not, downloads it from GitHub releases.
  */
@@ -67,7 +82,15 @@ async function getVideoInfo(url) {
   await ensureYtdlp();
   console.log(`[Downloader] Fetching metadata for: ${url}`);
   try {
-    const args = ['--dump-json', '--no-playlist', url];
+    const args = ['--dump-json', '--no-playlist'];
+    
+    const cookiesPath = getCookiesPath();
+    if (cookiesPath) {
+      args.push('--cookies', cookiesPath);
+      console.log(`[Downloader] Using cookies from: ${cookiesPath}`);
+    }
+    
+    args.push(url);
     const output = await runExec(YTDLP_PATH, args, { maxBuffer: 10 * 1024 * 1024 });
     const info = JSON.parse(output);
 
@@ -111,9 +134,16 @@ async function downloadAudio(url, videoId, onProgress = null) {
     '--audio-format', 'mp3',
     '--audio-quality', '128K', // Standard CBR quality to keep files under Telegram's 50MB limit
     '--no-playlist',
-    '-o', outputPath,
-    url
+    '-o', outputPath
   ];
+
+  const cookiesPath = getCookiesPath();
+  if (cookiesPath) {
+    args.push('--cookies', cookiesPath);
+    console.log(`[Downloader] Using cookies from: ${cookiesPath}`);
+  }
+
+  args.push(url);
 
   console.log(`[Downloader] Downloading and converting: ${url}`);
   return new Promise((resolve, reject) => {

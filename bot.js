@@ -18,9 +18,13 @@ if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 const bot = new Bot(token);
 
 const ALLOWED_USERNAME = 'VishyG07';
+const PUBLIC_MODE = true; // Set to true to temporarily allow anyone to use the bot
 
-// Access Control Middleware (only allow the owner @VishyG07)
+// Access Control Middleware (only allow the owner @VishyG07 unless PUBLIC_MODE is active)
 bot.use(async (ctx, next) => {
+  if (PUBLIC_MODE) {
+    return await next();
+  }
   const username = ctx.from?.username;
   if (!username || username.toLowerCase() !== ALLOWED_USERNAME.toLowerCase()) {
     if (ctx.message) {

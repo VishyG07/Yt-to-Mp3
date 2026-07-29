@@ -264,7 +264,7 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
 
     const onProgress = async (percent) => {
       const now = Date.now();
-      if (now - lastUpdateTime > 3500 && percent - lastPercent >= 8) {
+      if (now - lastUpdateTime > 1500 && percent > lastPercent) {
         lastUpdateTime = now;
         lastPercent = percent;
         await safeEditMessageText(
@@ -418,7 +418,7 @@ async function processPlaylist(ctx, playlistId) {
 
       const onProgress = async (percent) => {
         const now = Date.now();
-        if (now - lastUpdateTime > 3500 && percent - lastPercent >= 10) {
+        if (now - lastUpdateTime > 1500 && percent > lastPercent) {
           lastUpdateTime = now;
           lastPercent = percent;
           await safeEditMessageText(

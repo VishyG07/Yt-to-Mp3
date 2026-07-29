@@ -227,11 +227,53 @@ async function cleanupFiles(filePaths) {
   }
 }
 
+/**
+ * Fetches basic playlist info using yt-dlp --flat-playlist.
+ */
+async function getPlaylistInfo(url) {
+  await ensureYtdlp();
+  console.log(`[Downloader] Fetching playlist info for: ${url}`);
+  try {
+    const args = ['--dump-single-json', '--flat-playlist', '--js-runtimes', 'node'];
+    
+    const cookiesPath = getCookiesPath();
+    if (cookiesPath) {
+      args.push('--cookies', cookiesPath);
+    }
+    
+    args.push(url);
+    const output = await runExec(YTDLP_PATH, args, { maxBuffer: 50 * 1024 * 1024 });
+    const info = JSON.parse(output);
+
+    if (info._type !== 'playlist') {
+      throw new Error('Not a playlist URL');
+    }
+
+    const entries = (info.entries || []).map((entry, index) => ({
+      index: index + 1,
+      id: entry.id,
+      title: entry.title || `Track ${index + 1}`,
+      url: `https://www.youtube.com/watch?v=${entry.id}`,
+      duration: entry.duration || 0,
+      uploader: entry.uploader || info.uploader || 'Unknown Creator'
+    }));
+
+    return {
+      title: info.title || 'Untitled Playlist',
+      entries: entries
+    };
+  } catch (error) {
+    console.error('[Downloader] Error fetching playlist info:', error);
+    throw new Error('Failed to retrieve playlist details. Make sure the link is correct and public.');
+  }
+}
+
 module.exports = {
   getVideoInfo,
   downloadAudio,
   downloadThumbnail,
   cleanupFiles,
   ensureYtdlp,
-  getTargetBitrate
+  getTargetBitrate,
+  getPlaylistInfo
 };

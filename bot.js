@@ -1,8 +1,8 @@
 require('dotenv').config();
-const { Bot, InputFile } = require('grammy');
+const { Bot, InputFile, InlineKeyboard } = require('grammy');
 const fs = require('fs');
 const path = require('path');
-const { getVideoInfo, downloadAudio, downloadThumbnail, cleanupFiles, ensureYtdlp, getTargetBitrate } = require('./downloader');
+const { getVideoInfo, downloadAudio, downloadThumbnail, cleanupFiles, ensureYtdlp, getTargetBitrate, getPlaylistInfo } = require('./downloader');
 
 // Verify token exists
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -46,7 +46,7 @@ bot.command('start', async (ctx) => {
     `• *Metadata & Cover Art:* Automatically attaches the video title, creator, and thumbnail.\n` +
     `• *Secure & Private:* Locked exclusively to your account.\n\n` +
     `🚀 *How to use:*\n` +
-    `1. Copy any YouTube video or Shorts link.\n` +
+    `1. Copy any YouTube video, Shorts, or Playlist link.\n` +
     `2. Paste the link here in this chat.\n\n` +
     `*Send me a link to get started!* 📥`,
     { parse_mode: 'Markdown' }
@@ -57,12 +57,33 @@ bot.command('start', async (ctx) => {
 bot.command('help', async (ctx) => {
   await ctx.reply(
     `ℹ️ *How to use this bot:*\n\n` +
-    `1. Copy a YouTube link (e.g., \`https://www.youtube.com/watch?v=...\` or \`https://youtu.be/...\`).\n` +
+    `1. Copy a YouTube link (e.g., \`https://www.youtube.com/watch?v=...\` or \`https://youtu.be/...\` or a playlist link).\n` +
     `2. Paste it here in the chat.\n` +
-    `3. Wait for the bot to process, download, convert, and send your MP3 track.\n\n` +
-    `⚠️ *Note:* Standard Telegram bots have a limit of **50 MB** per uploaded file. Videos longer than ~50 minutes might not be deliverable due to this restriction.`,
+    `3. If the link belongs to a playlist, select whether to download only the video or the entire playlist.\n` +
+    `4. Wait for the bot to process, download, convert, and send your MP3 tracks.\n\n` +
+    `⚠️ *Note:* Standard Telegram bots have a limit of **50 MB** per uploaded file. Long videos are dynamically compressed to fit within this restriction. Playlists are capped at **25 tracks** at a time.`,
     { parse_mode: 'Markdown' }
   );
+});
+
+// Handler for callback queries (Inline Keyboard choices)
+bot.callbackQuery(/^single:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const videoId = ctx.match[1];
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  try {
+    await ctx.deleteMessage();
+  } catch (e) {}
+  await processSingleVideo(ctx, url, videoId);
+});
+
+bot.callbackQuery(/^playlist:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const playlistId = ctx.match[1];
+  try {
+    await ctx.deleteMessage();
+  } catch (e) {}
+  await processPlaylist(ctx, playlistId);
 });
 
 // Handler for all text messages
@@ -71,19 +92,65 @@ bot.on('message:text', async (ctx) => {
   const match = messageText.match(YOUTUBE_REGEX);
 
   if (!match) {
-    // If not a youtube link, ignore or send a polite prompt
     return ctx.reply('⚠️ Please send a valid YouTube link (e.g., https://www.youtube.com/watch?v=... or https://youtu.be/...).');
   }
 
   const youtubeUrl = match[0];
-  const videoId = match[1];
+  let videoId = null;
+  let playlistId = null;
+  let isPlaylistOnly = false;
 
+  try {
+    let urlToParse = youtubeUrl;
+    if (!/^https?:\/\//i.test(urlToParse)) {
+      urlToParse = 'https://' + urlToParse;
+    }
+    const parsedUrl = new URL(urlToParse);
+    
+    if (parsedUrl.pathname.includes('/playlist')) {
+      playlistId = parsedUrl.searchParams.get('list');
+      isPlaylistOnly = true;
+    } else {
+      videoId = match[1];
+      playlistId = parsedUrl.searchParams.get('list');
+    }
+  } catch (e) {
+    console.error('[Bot] URL parsing failed, fallback to regex video ID', e);
+    videoId = match[1];
+  }
+
+  // If it's a direct playlist link, process playlist immediately
+  if (isPlaylistOnly || (playlistId && !videoId)) {
+    return processPlaylist(ctx, playlistId);
+  }
+
+  // If it has both a video ID and playlist ID, ask the user
+  if (videoId && playlistId) {
+    const keyboard = new InlineKeyboard()
+      .text('🎵 Single Video', `single:${videoId}`)
+      .text('📋 Entire Playlist', `playlist:${playlistId}`);
+
+    return ctx.reply(
+      `📋 *This video belongs to a playlist.*\n\nWould you like to download only this single video or the entire playlist?`,
+      { reply_markup: keyboard, parse_mode: 'Markdown' }
+    );
+  }
+
+  // Standard single video download
+  if (videoId) {
+    return processSingleVideo(ctx, youtubeUrl, videoId);
+  }
+});
+
+/**
+ * Core function to download and send a single YouTube video.
+ */
+async function processSingleVideo(ctx, youtubeUrl, videoId) {
   let statusMessage;
   let mp3Path = null;
   let thumbPath = null;
 
   try {
-    // 1. Analyze link
     statusMessage = await ctx.reply('🔍 *Analyzing video link...*', { parse_mode: 'Markdown' });
 
     // Fetch video info
@@ -92,7 +159,7 @@ bot.on('message:text', async (ctx) => {
     // Calculate dynamic audio bitrate to fit inside Telegram's 50MB limit
     const bitrate = getTargetBitrate(info.duration);
 
-    // If duration is too long (over 3.3 hours / 12000 seconds), it won't fit even at 32k
+    // If duration is too long (over 3.3 hours / 12000 seconds), reject
     const MAX_DURATION_SECONDS = 12000;
     if (info.duration > MAX_DURATION_SECONDS) {
       await ctx.api.editMessageText(
@@ -107,7 +174,6 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
-    // 3. Start download and conversion
     let downloadNotice = '';
     if (bitrate !== '128K') {
       downloadNotice = `\n\n⚠️ _Note: This video is long (${Math.floor(info.duration / 60)} min). Audio will be optimized at ${bitrate.replace('K', ' kbps')} to fit inside Telegram's 50MB limit._`;
@@ -116,20 +182,18 @@ bot.on('message:text', async (ctx) => {
     await ctx.api.editMessageText(
       ctx.chat.id,
       statusMessage.message_id,
-      `⏳ *Downloading audio...*${downloadNotice}\n\n` +
+      `⏳ *Downloading and converting...*${downloadNotice}\n\n` +
       `• Title: _${info.title}_\n` +
       `• Channel: _${info.uploader}_\n` +
       `• Progress: 0%`,
       { parse_mode: 'Markdown' }
     );
 
-    // Throttle progress updates to avoid hitting Telegram Rate Limits
     let lastUpdateTime = Date.now();
     let lastPercent = 0;
 
     const onProgress = async (percent) => {
       const now = Date.now();
-      // Update at most once every 3.5 seconds, and only if progress advanced by >= 8%
       if (now - lastUpdateTime > 3500 && percent - lastPercent >= 8) {
         lastUpdateTime = now;
         lastPercent = percent;
@@ -143,16 +207,14 @@ bot.on('message:text', async (ctx) => {
             `• Progress: ${percent.toFixed(0)}%`,
             { parse_mode: 'Markdown' }
           );
-        } catch (e) {
-          // Ignore edits that fail due to identical content or fast rate
-        }
+        } catch (e) {}
       }
     };
 
     // Download audio and convert to MP3
     mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress, bitrate);
 
-    // 4. Download thumbnail for album art
+    // Download thumbnail for album art
     await ctx.api.editMessageText(
       ctx.chat.id,
       statusMessage.message_id,
@@ -161,7 +223,6 @@ bot.on('message:text', async (ctx) => {
     );
     thumbPath = await downloadThumbnail(info.thumbnailUrl, videoId);
 
-    // 5. Send the audio file
     await ctx.api.editMessageText(
       ctx.chat.id,
       statusMessage.message_id,
@@ -175,20 +236,16 @@ bot.on('message:text', async (ctx) => {
       duration: Math.round(info.duration),
     };
 
-    // If thumbnail was successfully downloaded, attach it
     if (thumbPath && fs.existsSync(thumbPath)) {
       audioOptions.thumbnail = new InputFile(thumbPath);
     }
 
     await ctx.replyWithAudio(new InputFile(mp3Path), audioOptions);
-
-    // 6. Delete status message and clean up
     await ctx.api.deleteMessage(ctx.chat.id, statusMessage.message_id);
     console.log(`[Bot] Successfully sent MP3 for ${videoId}`);
 
   } catch (error) {
-    console.error('[Bot] Error processing request:', error);
-    
+    console.error('[Bot] Error processing single video:', error);
     const errorMessage = error.message || 'Unknown error occurred.';
     if (statusMessage) {
       try {
@@ -205,10 +262,147 @@ bot.on('message:text', async (ctx) => {
       await ctx.reply(`❌ *Failed to convert video:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
     }
   } finally {
-    // Ensure cleanup of local files in all cases
     await cleanupFiles([mp3Path, thumbPath]);
   }
-});
+}
+
+/**
+ * Core function to download and send an entire playlist.
+ */
+async function processPlaylist(ctx, playlistId) {
+  let statusMessage;
+  try {
+    statusMessage = await ctx.reply('🔍 *Fetching playlist details...*', { parse_mode: 'Markdown' });
+    const playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
+    const playlist = await getPlaylistInfo(playlistUrl);
+
+    const MAX_PLAYLIST_TRACKS = 25;
+    const tracksToProcess = playlist.entries.slice(0, MAX_PLAYLIST_TRACKS);
+    const totalTracks = playlist.entries.length;
+
+    let limitNotice = '';
+    if (totalTracks > MAX_PLAYLIST_TRACKS) {
+      limitNotice = `\n\n⚠️ _Note: Playlists are capped at ${MAX_PLAYLIST_TRACKS} tracks per request to keep downloads fast and stable._`;
+    }
+
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      statusMessage.message_id,
+      `📋 *Playlist Found:*\n` +
+      `• Title: _${playlist.title}_\n` +
+      `• Total Tracks: _${totalTracks}_${limitNotice}\n\n` +
+      `⏳ Starting downloads...`,
+      { parse_mode: 'Markdown' }
+    );
+
+    // Loop through tracks sequentially
+    for (let i = 0; i < tracksToProcess.length; i++) {
+      const entry = tracksToProcess[i];
+      const trackIndex = i + 1;
+
+      console.log(`[Bot] Playlist track ${trackIndex}/${tracksToProcess.length}: ${entry.title}`);
+
+      // Calculate dynamic bitrate based on track duration
+      const bitrate = getTargetBitrate(entry.duration);
+
+      // Skip track if it exceeds 3.3 hours
+      if (entry.duration > 12000) {
+        await ctx.reply(`❌ *Track ${trackIndex} skipped:* _"${entry.title}"_ is too long (over 3.3 hours).`, { parse_mode: 'Markdown' });
+        continue;
+      }
+
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        statusMessage.message_id,
+        `📥 *Downloading Track ${trackIndex} of ${tracksToProcess.length}:*\n` +
+        `• Title: _${entry.title}_\n` +
+        `• Channel: _${entry.uploader}_\n` +
+        `• Quality: _${bitrate.replace('K', ' kbps')}_\n` +
+        `• Progress: 0%`,
+        { parse_mode: 'Markdown' }
+      );
+
+      let lastUpdateTime = Date.now();
+      let lastPercent = 0;
+
+      const onProgress = async (percent) => {
+        const now = Date.now();
+        if (now - lastUpdateTime > 3500 && percent - lastPercent >= 10) {
+          lastUpdateTime = now;
+          lastPercent = percent;
+          try {
+            await ctx.api.editMessageText(
+              ctx.chat.id,
+              statusMessage.message_id,
+              `📥 *Downloading Track ${trackIndex} of ${tracksToProcess.length}:*\n` +
+              `• Title: _${entry.title}_\n` +
+              `• Channel: _${entry.uploader}_\n` +
+              `• Quality: _${bitrate.replace('K', ' kbps')}_\n` +
+              `• Progress: ${percent.toFixed(0)}%`,
+              { parse_mode: 'Markdown' }
+            );
+          } catch (e) {}
+        }
+      };
+
+      let mp3Path = null;
+      let thumbPath = null;
+
+      try {
+        // Download audio
+        mp3Path = await downloadAudio(entry.url, entry.id, onProgress, bitrate);
+
+        // Prepare metadata options
+        const audioOptions = {
+          title: entry.title,
+          performer: entry.uploader,
+          duration: Math.round(entry.duration),
+        };
+
+        // Download thumbnail
+        const thumbnailUrl = `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg`;
+        thumbPath = await downloadThumbnail(thumbnailUrl, entry.id);
+        if (thumbPath && fs.existsSync(thumbPath)) {
+          audioOptions.thumbnail = new InputFile(thumbPath);
+        }
+
+        // Send the track
+        await ctx.replyWithAudio(new InputFile(mp3Path), audioOptions);
+
+      } catch (err) {
+        console.error(`[Bot] Error downloading track ${trackIndex}:`, err);
+        await ctx.reply(`❌ *Failed to download track ${trackIndex}:* _"${entry.title}"_\nReason: _${err.message}_`, { parse_mode: 'Markdown' });
+      } finally {
+        await cleanupFiles([mp3Path, thumbPath]);
+      }
+
+      // 2 seconds cooldown to prevent Telegram API rate limits
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Done
+    await ctx.api.deleteMessage(ctx.chat.id, statusMessage.message_id);
+    await ctx.reply(`✅ *Playlist download complete!* All available tracks from _"${playlist.title}"_ have been sent.`, { parse_mode: 'Markdown' });
+
+  } catch (error) {
+    console.error('[Bot] Playlist error:', error);
+    const errorMessage = error.message || 'Unknown error occurred.';
+    if (statusMessage) {
+      try {
+        await ctx.api.editMessageText(
+          ctx.chat.id,
+          statusMessage.message_id,
+          `❌ *Playlist download failed:*\n_${errorMessage}_`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (e) {
+        await ctx.reply(`❌ *Playlist download failed:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
+      }
+    } else {
+      await ctx.reply(`❌ *Playlist download failed:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
+    }
+  }
+}
 
 // Start the bot and ensure yt-dlp is ready
 (async () => {

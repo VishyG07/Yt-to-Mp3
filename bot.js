@@ -31,8 +31,8 @@ bot.use(async (ctx, next) => {
   await next(); // Proceed to handlers
 });
 
-// YouTube URL Regex
-const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
+// YouTube URL Regex (matches any valid youtube.com or youtu.be link)
+const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/\S+/i;
 
 // Command: /start
 bot.command('start', async (ctx) => {
@@ -107,16 +107,27 @@ bot.on('message:text', async (ctx) => {
     }
     const parsedUrl = new URL(urlToParse);
     
+    playlistId = parsedUrl.searchParams.get('list');
+    
     if (parsedUrl.pathname.includes('/playlist')) {
-      playlistId = parsedUrl.searchParams.get('list');
       isPlaylistOnly = true;
+    } else if (parsedUrl.pathname.includes('/shorts/')) {
+      const parts = parsedUrl.pathname.split('/');
+      videoId = parts[parts.indexOf('shorts') + 1];
+    } else if (parsedUrl.hostname === 'youtu.be') {
+      videoId = parsedUrl.pathname.substring(1);
     } else {
-      videoId = match[1];
-      playlistId = parsedUrl.searchParams.get('list');
+      videoId = parsedUrl.searchParams.get('v');
     }
+
+    if (videoId) videoId = videoId.split(/[?#&]/)[0];
+    if (playlistId) playlistId = playlistId.split(/[?#&]/)[0];
   } catch (e) {
-    console.error('[Bot] URL parsing failed, fallback to regex video ID', e);
-    videoId = match[1];
+    console.error('[Bot] URL parsing failed', e);
+  }
+
+  if (!videoId && !playlistId) {
+    return ctx.reply('⚠️ Please send a valid YouTube video or playlist link.');
   }
 
   // If it's a direct playlist link, process playlist immediately

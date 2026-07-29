@@ -23,9 +23,18 @@ const activeSessions = new Map();
 // Command: /stop
 bot.command('stop', async (ctx) => {
   const chatId = ctx.chat.id;
-  if (activeSessions.get(chatId)) {
-    activeSessions.set(chatId, false);
-    await ctx.reply('🛑 *Stopping playlist download...* The current track will finish, and the process will stop.', { parse_mode: 'Markdown' });
+  const session = activeSessions.get(chatId);
+  if (session) {
+    session.stopped = true;
+    if (session.activeProcess) {
+      console.log(`[Bot] Instantly killing active process for chat ${chatId}`);
+      try {
+        session.activeProcess.kill('SIGKILL');
+      } catch (e) {
+        console.error('[Bot] Failed to kill process:', e);
+      }
+    }
+    await ctx.reply('🛑 *Stopping download instantly...*', { parse_mode: 'Markdown' });
   } else {
     await ctx.reply('⚠️ No active download process to stop.', { parse_mode: 'Markdown' });
   }
@@ -156,6 +165,10 @@ bot.on('message:text', async (ctx) => {
  * Core function to download and send a single YouTube video.
  */
 async function processSingleVideo(ctx, youtubeUrl, videoId) {
+  const chatId = ctx.chat.id;
+  const session = { activeProcess: null, stopped: false };
+  activeSessions.set(chatId, session);
+
   let statusMessage;
   let mp3Path = null;
   let thumbPath = null;
@@ -222,7 +235,10 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
     };
 
     // Download audio and convert to MP3
-    mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress, bitrate);
+    const onSpawn = (child) => {
+      session.activeProcess = child;
+    };
+    mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress, bitrate, onSpawn);
 
     // Download thumbnail for album art
     await ctx.api.editMessageText(
@@ -255,6 +271,13 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
     console.log(`[Bot] Successfully sent MP3 for ${videoId}`);
 
   } catch (error) {
+    if (session.stopped) {
+      try {
+        await ctx.api.deleteMessage(chatId, statusMessage.message_id);
+      } catch (e) {}
+      await ctx.reply('🛑 *Download cancelled instantly.*', { parse_mode: 'Markdown' });
+      return;
+    }
     console.error('[Bot] Error processing single video:', error);
     const errorMessage = error.message || 'Unknown error occurred.';
     if (statusMessage) {
@@ -272,6 +295,7 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
       await ctx.reply(`❌ *Failed to convert video:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
     }
   } finally {
+    activeSessions.delete(chatId);
     await cleanupFiles([mp3Path, thumbPath]);
   }
 }
@@ -281,9 +305,11 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
  */
 async function processPlaylist(ctx, playlistId) {
   const chatId = ctx.chat.id;
+  const session = { activeProcess: null, stopped: false };
+  activeSessions.set(chatId, session);
+
   let statusMessage;
   try {
-    activeSessions.set(chatId, true);
     statusMessage = await ctx.reply('🔍 *Fetching playlist details...*', { parse_mode: 'Markdown' });
     const playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
     const playlist = await getPlaylistInfo(playlistUrl);
@@ -312,12 +338,12 @@ async function processPlaylist(ctx, playlistId) {
     // Loop through tracks sequentially
     for (let i = 0; i < tracksToProcess.length; i++) {
       // Check if user requested to stop the process
-      if (!activeSessions.get(chatId)) {
+      if (session.stopped) {
         try {
           await ctx.api.deleteMessage(chatId, statusMessage.message_id);
         } catch (e) {}
         await ctx.reply(
-          `🛑 *Playlist download stopped.*\n\n` +
+          `🛑 *Playlist download stopped instantly.*\n\n` +
           `• Total tracks processed: _${i}_\n` +
           `• Successfully sent: _${downloadedCount}_`,
           { parse_mode: 'Markdown' }
@@ -378,7 +404,10 @@ async function processPlaylist(ctx, playlistId) {
 
       try {
         // Download audio
-        mp3Path = await downloadAudio(entry.url, entry.id, onProgress, bitrate);
+        const onSpawn = (child) => {
+          session.activeProcess = child;
+        };
+        mp3Path = await downloadAudio(entry.url, entry.id, onProgress, bitrate, onSpawn);
 
         // Prepare metadata options
         const audioOptions = {
@@ -399,6 +428,18 @@ async function processPlaylist(ctx, playlistId) {
         downloadedCount++;
 
       } catch (err) {
+        if (session.stopped) {
+          try {
+            await ctx.api.deleteMessage(chatId, statusMessage.message_id);
+          } catch (e) {}
+          await ctx.reply(
+            `🛑 *Playlist download stopped instantly.*\n\n` +
+            `• Total tracks processed: _${i}_\n` +
+            `• Successfully sent: _${downloadedCount}_`,
+            { parse_mode: 'Markdown' }
+          );
+          return;
+        }
         console.error(`[Bot] Error downloading track ${trackIndex}:`, err);
         await ctx.reply(`❌ *Failed to download track ${trackIndex}:* _"${entry.title}"_\nReason: _${err.message}_`, { parse_mode: 'Markdown' });
       } finally {

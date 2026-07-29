@@ -177,7 +177,7 @@ async function getVideoInfo(url) {
  * Downloads a YouTube video and converts it to MP3.
  * Runs callback with progress percentage if provided.
  */
-async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K') {
+async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K', onSpawn = null) {
   await ensureYtdlp();
 
   const outputPath = path.join(TEMP_DIR, `${videoId}.%(ext)s`);
@@ -216,6 +216,9 @@ async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K') 
   console.log(`[Downloader] Downloading and converting: ${url}`);
   return new Promise((resolve, reject) => {
     const process = spawn(YTDLP_PATH, args);
+    if (onSpawn) {
+      onSpawn(process);
+    }
     let errorOutput = '';
 
     process.stdout.on('data', (data) => {

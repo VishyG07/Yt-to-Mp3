@@ -2,7 +2,7 @@ require('dotenv').config();
 const { Bot, InputFile } = require('grammy');
 const fs = require('fs');
 const path = require('path');
-const { getVideoInfo, downloadAudio, downloadThumbnail, cleanupFiles, ensureYtdlp } = require('./downloader');
+const { getVideoInfo, downloadAudio, downloadThumbnail, cleanupFiles, ensureYtdlp, getTargetBitrate } = require('./downloader');
 
 // Verify token exists
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -68,27 +68,34 @@ bot.on('message:text', async (ctx) => {
     // Fetch video info
     const info = await getVideoInfo(youtubeUrl);
 
-    // 2. Validate file size and duration
-    // Telegram Bot API upload limit is 50MB (52,428,800 bytes)
-    const MAX_UPLOAD_SIZE_MB = 49.5;
-    if (info.estimatedSizeMb > MAX_UPLOAD_SIZE_MB) {
+    // Calculate dynamic audio bitrate to fit inside Telegram's 50MB limit
+    const bitrate = getTargetBitrate(info.duration);
+
+    // If duration is too long (over 3.3 hours / 12000 seconds), it won't fit even at 32k
+    const MAX_DURATION_SECONDS = 12000;
+    if (info.duration > MAX_DURATION_SECONDS) {
       await ctx.api.editMessageText(
         ctx.chat.id,
         statusMessage.message_id,
         `❌ *Video is too long!*\n\n` +
         `• Title: _${info.title}_\n` +
         `• Duration: _${Math.floor(info.duration / 60)} minutes_\n\n` +
-        `Telegram bots can only upload files up to *50 MB*. At standard quality, this video's audio is estimated to be *${info.estimatedSizeMb.toFixed(1)} MB*, which exceeds the limit.`,
+        `Telegram bots can only upload files up to *50 MB*. This video exceeds the maximum supported length of 3.3 hours.`,
         { parse_mode: 'Markdown' }
       );
       return;
     }
 
     // 3. Start download and conversion
+    let downloadNotice = '';
+    if (bitrate !== '128K') {
+      downloadNotice = `\n\n⚠️ _Note: This video is long (${Math.floor(info.duration / 60)} min). Audio will be optimized at ${bitrate.replace('K', ' kbps')} to fit inside Telegram's 50MB limit._`;
+    }
+
     await ctx.api.editMessageText(
       ctx.chat.id,
       statusMessage.message_id,
-      `⏳ *Downloading audio...*\n\n` +
+      `⏳ *Downloading audio...*${downloadNotice}\n\n` +
       `• Title: _${info.title}_\n` +
       `• Channel: _${info.uploader}_\n` +
       `• Progress: 0%`,
@@ -109,7 +116,7 @@ bot.on('message:text', async (ctx) => {
           await ctx.api.editMessageText(
             ctx.chat.id,
             statusMessage.message_id,
-            `⏳ *Downloading and converting...*\n\n` +
+            `⏳ *Downloading and converting...*${downloadNotice}\n\n` +
             `• Title: _${info.title}_\n` +
             `• Channel: _${info.uploader}_\n` +
             `• Progress: ${percent.toFixed(0)}%`,
@@ -122,7 +129,7 @@ bot.on('message:text', async (ctx) => {
     };
 
     // Download audio and convert to MP3
-    mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress);
+    mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress, bitrate);
 
     // 4. Download thumbnail for album art
     await ctx.api.editMessageText(

@@ -47,6 +47,16 @@ function getCookiesPath() {
 }
 
 /**
+ * Calculates target audio bitrate to fit within Telegram's 50MB file size limit.
+ */
+function getTargetBitrate(duration) {
+  if (!duration || duration <= 3000) return '128K'; // Up to 50 mins -> 128 kbps (approx 45MB)
+  if (duration <= 4000) return '96K';               // Up to 66 mins -> 96 kbps (approx 45MB)
+  if (duration <= 6000) return '64K';               // Up to 100 mins -> 64 kbps (approx 45MB)
+  return '32K';                                     // Up to 200 mins -> 32 kbps (approx 45MB)
+}
+
+/**
  * Ensures yt-dlp binary is present in the project directory.
  * If not, downloads it from GitHub releases.
  */
@@ -112,7 +122,7 @@ async function getVideoInfo(url) {
  * Downloads a YouTube video and converts it to MP3.
  * Runs callback with progress percentage if provided.
  */
-async function downloadAudio(url, videoId, onProgress = null) {
+async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K') {
   await ensureYtdlp();
 
   const outputPath = path.join(TEMP_DIR, `${videoId}.%(ext)s`);
@@ -132,7 +142,7 @@ async function downloadAudio(url, videoId, onProgress = null) {
     '--ffmpeg-location', ffmpegDir,
     '-x',
     '--audio-format', 'mp3',
-    '--audio-quality', '128K', // Standard CBR quality to keep files under Telegram's 50MB limit
+    '--audio-quality', bitrate, // Dynamic CBR quality to keep files under Telegram's 50MB limit
     '--no-playlist',
     '--js-runtimes', 'node',
     '-o', outputPath
@@ -222,5 +232,6 @@ module.exports = {
   downloadAudio,
   downloadThumbnail,
   cleanupFiles,
-  ensureYtdlp
+  ensureYtdlp,
+  getTargetBitrate
 };

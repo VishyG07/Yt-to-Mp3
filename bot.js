@@ -36,13 +36,20 @@ const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\
 
 // Command: /start
 bot.command('start', async (ctx) => {
-  const username = ctx.from?.first_name || 'there';
+  const name = ctx.from?.first_name || 'there';
   await ctx.reply(
-    `👋 Hello, *${username}*\!\n\n` +
-    `Welcome to the *YouTube to MP3 Downloader Bot* 🎵\n\n` +
-    `Simply send me any YouTube link (video, shorts, etc.), and I will extract the audio and send it to you as an MP3 file.\n\n` +
-    `⚡ _Fast and high quality!_`,
-    { parse_mode: 'MarkdownV2' }
+    `👋 *Welcome, ${name}!*\n\n` +
+    `I am your personal *YouTube to MP3 Downloader* 🎵\n\n` +
+    `⚡ *Features:*\n` +
+    `• *High Quality:* Default 128 kbps audio encoding.\n` +
+    `• *Smart Compression:* Fits long videos (up to 3.3 hours!) under Telegram's 50MB limit.\n` +
+    `• *Metadata & Cover Art:* Automatically attaches the video title, creator, and thumbnail.\n` +
+    `• *Secure & Private:* Locked exclusively to your account.\n\n` +
+    `🚀 *How to use:*\n` +
+    `1. Copy any YouTube video or Shorts link.\n` +
+    `2. Paste the link here in this chat.\n\n` +
+    `*Send me a link to get started!* 📥`,
+    { parse_mode: 'Markdown' }
   );
 });
 

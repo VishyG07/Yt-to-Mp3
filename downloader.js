@@ -32,18 +32,67 @@ function runExec(file, args, options = {}) {
 }
 
 /**
- * Checks for a cookies.txt file locally or in Render's secret mount folder.
+ * Checks for a cookies.txt file locally or in Render's secret mount folder,
+ * dynamically fixes any tab-to-space formatting errors, and uncomments HttpOnly cookies.
  */
 function getCookiesPath() {
   const localCookies = path.join(__dirname, 'cookies.txt');
   const secretCookies = '/etc/secrets/cookies.txt';
+  const fixedCookies = path.join(TEMP_DIR, 'cookies_fixed.txt');
 
-  if (fs.existsSync(localCookies)) {
-    return localCookies;
-  } else if (fs.existsSync(secretCookies)) {
-    return secretCookies;
+  const sourcePath = fs.existsSync(secretCookies) ? secretCookies : (fs.existsSync(localCookies) ? localCookies : null);
+  if (!sourcePath) return null;
+
+  try {
+    const content = fs.readFileSync(sourcePath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    const fixedLines = [];
+
+    for (let line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === '') {
+        fixedLines.push('');
+        continue;
+      }
+
+      // Handle comments/headers
+      if (trimmed.startsWith('#')) {
+        // Exporters (like Cookie-Editor) prefix HttpOnly cookies with '#HttpOnly_'
+        // We strip this prefix so yt-dlp reads them as active cookies.
+        if (trimmed.startsWith('#HttpOnly_')) {
+          const cleanLine = trimmed.substring(10); // Remove '#HttpOnly_'
+          const parts = cleanLine.split(/\s+/);
+          if (parts.length >= 7) {
+            fixedLines.push(parts.slice(0, 7).join('\t'));
+            continue;
+          }
+        }
+        fixedLines.push(line);
+        continue;
+      }
+
+      // Standard active cookies (split by tab/spaces and enforce true tabs)
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 7) {
+        fixedLines.push(parts.slice(0, 7).join('\t'));
+      } else {
+        fixedLines.push(line);
+      }
+    }
+
+    const fixedContent = fixedLines.join('\n');
+
+    // Ensure temp directory exists
+    if (!fs.existsSync(TEMP_DIR)) {
+      fs.mkdirSync(TEMP_DIR, { recursive: true });
+    }
+
+    fs.writeFileSync(fixedCookies, fixedContent, 'utf8');
+    return fixedCookies;
+  } catch (error) {
+    console.error('[Downloader] Failed to parse/fix cookies file:', error);
+    return sourcePath; // Fallback to raw file if fix fails
   }
-  return null;
 }
 
 /**

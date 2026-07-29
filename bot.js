@@ -22,6 +22,24 @@ bot.catch((err) => {
   console.error(`[Bot Error] Error:`, err.error);
 });
 
+// Helper to edit messages safely without throwing errors on deletion
+async function safeEditMessageText(ctx, messageId, text, options = {}) {
+  try {
+    await ctx.api.editMessageText(ctx.chat.id, messageId, text, options);
+  } catch (error) {
+    console.warn('[Bot] safeEditMessageText ignored error (likely message was deleted or unmodified):', error.message);
+  }
+}
+
+// Helper to delete messages safely without throwing errors
+async function safeDeleteMessage(ctx, messageId) {
+  try {
+    await ctx.api.deleteMessage(ctx.chat.id, messageId);
+  } catch (error) {
+    console.warn('[Bot] safeDeleteMessage ignored error (likely already deleted):', error.message);
+  }
+}
+
 const ALLOWED_USERNAMES = ['VishyG07', 'vibhavan'];
 
 // Access Control Middleware (only allow authorized users)
@@ -214,8 +232,8 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
     // If duration is too long (over 3.3 hours / 12000 seconds), reject
     const MAX_DURATION_SECONDS = 12000;
     if (info.duration > MAX_DURATION_SECONDS) {
-      await ctx.api.editMessageText(
-        ctx.chat.id,
+      await safeEditMessageText(
+        ctx,
         statusMessage.message_id,
         `❌ *Video is too long!*\n\n` +
         `• Title: _${info.title}_\n` +
@@ -231,8 +249,8 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
       downloadNotice = `\n\n⚠️ _Note: This video is long (${Math.floor(info.duration / 60)} min). Audio will be optimized at ${bitrate.replace('K', ' kbps')} to fit inside Telegram's 50MB limit._`;
     }
 
-    await ctx.api.editMessageText(
-      ctx.chat.id,
+    await safeEditMessageText(
+      ctx,
       statusMessage.message_id,
       `⏳ *Downloading and converting...*${downloadNotice}\n\n` +
       `• Title: _${info.title}_\n` +
@@ -249,17 +267,15 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
       if (now - lastUpdateTime > 3500 && percent - lastPercent >= 8) {
         lastUpdateTime = now;
         lastPercent = percent;
-        try {
-          await ctx.api.editMessageText(
-            ctx.chat.id,
-            statusMessage.message_id,
-            `⏳ *Downloading and converting...*${downloadNotice}\n\n` +
-            `• Title: _${info.title}_\n` +
-            `• Channel: _${info.uploader}_\n` +
-            `• Progress: ${percent.toFixed(0)}%`,
-            { parse_mode: 'Markdown' }
-          );
-        } catch (e) {}
+        await safeEditMessageText(
+          ctx,
+          statusMessage.message_id,
+          `⏳ *Downloading and converting...*${downloadNotice}\n\n` +
+          `• Title: _${info.title}_\n` +
+          `• Channel: _${info.uploader}_\n` +
+          `• Progress: ${percent.toFixed(0)}%`,
+          { parse_mode: 'Markdown' }
+        );
       }
     };
 
@@ -270,16 +286,16 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
     mp3Path = await downloadAudio(youtubeUrl, videoId, onProgress, bitrate, onSpawn);
 
     // Download thumbnail for album art
-    await ctx.api.editMessageText(
-      ctx.chat.id,
+    await safeEditMessageText(
+      ctx,
       statusMessage.message_id,
       `🎵 *Preparing audio track...*`,
       { parse_mode: 'Markdown' }
     );
     thumbPath = await downloadThumbnail(info.thumbnailUrl, videoId);
 
-    await ctx.api.editMessageText(
-      ctx.chat.id,
+    await safeEditMessageText(
+      ctx,
       statusMessage.message_id,
       `📤 *Sending MP3 to Telegram...*`,
       { parse_mode: 'Markdown' }
@@ -296,30 +312,24 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
     }
 
     await ctx.replyWithAudio(new InputFile(mp3Path), audioOptions);
-    await ctx.api.deleteMessage(ctx.chat.id, statusMessage.message_id);
+    await safeDeleteMessage(ctx, statusMessage.message_id);
     console.log(`[Bot] Successfully sent MP3 for ${videoId}`);
 
   } catch (error) {
     if (session.stopped) {
-      try {
-        await ctx.api.deleteMessage(chatId, statusMessage.message_id);
-      } catch (e) {}
+      await safeDeleteMessage(ctx, statusMessage.message_id);
       await ctx.reply('🛑 *Download cancelled instantly.*', { parse_mode: 'Markdown' });
       return;
     }
     console.error('[Bot] Error processing single video:', error);
     const errorMessage = error.message || 'Unknown error occurred.';
     if (statusMessage) {
-      try {
-        await ctx.api.editMessageText(
-          ctx.chat.id,
-          statusMessage.message_id,
-          `❌ *Failed to convert video:*\n_${errorMessage}_`,
-          { parse_mode: 'Markdown' }
-        );
-      } catch (e) {
-        await ctx.reply(`❌ *Failed to convert video:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
-      }
+      await safeEditMessageText(
+        ctx,
+        statusMessage.message_id,
+        `❌ *Failed to convert video:*\n_${errorMessage}_`,
+        { parse_mode: 'Markdown' }
+      );
     } else {
       await ctx.reply(`❌ *Failed to convert video:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
     }
@@ -352,8 +362,8 @@ async function processPlaylist(ctx, playlistId) {
       limitNotice = `\n\n⚠️ _Note: Playlists are capped at ${MAX_PLAYLIST_TRACKS} tracks per request to keep downloads fast and stable._`;
     }
 
-    await ctx.api.editMessageText(
-      ctx.chat.id,
+    await safeEditMessageText(
+      ctx,
       statusMessage.message_id,
       `📋 *Playlist Found:*\n` +
       `• Title: _${playlist.title}_\n` +
@@ -368,9 +378,7 @@ async function processPlaylist(ctx, playlistId) {
     for (let i = 0; i < tracksToProcess.length; i++) {
       // Check if user requested to stop the process
       if (session.stopped) {
-        try {
-          await ctx.api.deleteMessage(chatId, statusMessage.message_id);
-        } catch (e) {}
+        await safeDeleteMessage(ctx, statusMessage.message_id);
         await ctx.reply(
           `🛑 *Playlist download stopped instantly.*\n\n` +
           `• Total tracks processed: _${i}_\n` +
@@ -394,8 +402,8 @@ async function processPlaylist(ctx, playlistId) {
         continue;
       }
 
-      await ctx.api.editMessageText(
-        ctx.chat.id,
+      await safeEditMessageText(
+        ctx,
         statusMessage.message_id,
         `📥 *Downloading Track ${trackIndex} of ${tracksToProcess.length}:*\n` +
         `• Title: _${entry.title}_\n` +
@@ -413,18 +421,16 @@ async function processPlaylist(ctx, playlistId) {
         if (now - lastUpdateTime > 3500 && percent - lastPercent >= 10) {
           lastUpdateTime = now;
           lastPercent = percent;
-          try {
-            await ctx.api.editMessageText(
-              ctx.chat.id,
-              statusMessage.message_id,
-              `📥 *Downloading Track ${trackIndex} of ${tracksToProcess.length}:*\n` +
-              `• Title: _${entry.title}_\n` +
-              `• Channel: _${entry.uploader}_\n` +
-              `• Quality: _${bitrate.replace('K', ' kbps')}_\n` +
-              `• Progress: ${percent.toFixed(0)}%`,
-              { parse_mode: 'Markdown' }
-            );
-          } catch (e) {}
+          await safeEditMessageText(
+            ctx,
+            statusMessage.message_id,
+            `📥 *Downloading Track ${trackIndex} of ${tracksToProcess.length}:*\n` +
+            `• Title: _${entry.title}_\n` +
+            `• Channel: _${entry.uploader}_\n` +
+            `• Quality: _${bitrate.replace('K', ' kbps')}_\n` +
+            `• Progress: ${percent.toFixed(0)}%`,
+            { parse_mode: 'Markdown' }
+          );
         }
       };
 
@@ -458,9 +464,7 @@ async function processPlaylist(ctx, playlistId) {
 
       } catch (err) {
         if (session.stopped) {
-          try {
-            await ctx.api.deleteMessage(chatId, statusMessage.message_id);
-          } catch (e) {}
+          await safeDeleteMessage(ctx, statusMessage.message_id);
           await ctx.reply(
             `🛑 *Playlist download stopped instantly.*\n\n` +
             `• Total tracks processed: _${i}_\n` +
@@ -480,23 +484,19 @@ async function processPlaylist(ctx, playlistId) {
     }
 
     // Done
-    await ctx.api.deleteMessage(ctx.chat.id, statusMessage.message_id);
+    await safeDeleteMessage(ctx, statusMessage.message_id);
     await ctx.reply(`✅ *Playlist download complete!* All available tracks from _"${playlist.title}"_ have been sent.`, { parse_mode: 'Markdown' });
 
   } catch (error) {
     console.error('[Bot] Playlist error:', error);
     const errorMessage = error.message || 'Unknown error occurred.';
     if (statusMessage) {
-      try {
-        await ctx.api.editMessageText(
-          ctx.chat.id,
-          statusMessage.message_id,
-          `❌ *Playlist download failed:*\n_${errorMessage}_`,
-          { parse_mode: 'Markdown' }
-        );
-      } catch (e) {
-        await ctx.reply(`❌ *Playlist download failed:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
-      }
+      await safeEditMessageText(
+        ctx,
+        statusMessage.message_id,
+        `❌ *Playlist download failed:*\n_${errorMessage}_`,
+        { parse_mode: 'Markdown' }
+      );
     } else {
       await ctx.reply(`❌ *Playlist download failed:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
     }

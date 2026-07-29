@@ -17,6 +17,20 @@ if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 // Initialize GrammY Bot
 const bot = new Bot(token);
 
+const ALLOWED_USERNAME = 'VishyG07';
+
+// Access Control Middleware (only allow the owner @VishyG07)
+bot.use(async (ctx, next) => {
+  const username = ctx.from?.username;
+  if (!username || username.toLowerCase() !== ALLOWED_USERNAME.toLowerCase()) {
+    if (ctx.message) {
+      await ctx.reply('❌ *Access Denied.*\nThis is a private bot and only accepts requests from its owner.', { parse_mode: 'Markdown' });
+    }
+    return; // Block execution
+  }
+  await next(); // Proceed to handlers
+});
+
 // Keep track of active downloading sessions
 const activeSessions = new Map();
 
@@ -52,7 +66,8 @@ bot.command('start', async (ctx) => {
     `⚡ *Features:*\n` +
     `• *High Quality:* Default 128 kbps audio encoding.\n` +
     `• *Smart Compression:* Fits long videos (up to 3.3 hours!) under Telegram's 50MB limit.\n` +
-    `• *Metadata & Cover Art:* Automatically attaches the video title, creator, and thumbnail.\n\n` +
+    `• *Metadata & Cover Art:* Automatically attaches the video title, creator, and thumbnail.\n` +
+    `• *Secure & Private:* Locked exclusively to your account.\n\n` +
     `🚀 *How to use:*\n` +
     `1. Copy any YouTube video, Shorts, or Playlist link.\n` +
     `2. Paste the link here in this chat.\n\n` +

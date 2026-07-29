@@ -17,6 +17,20 @@ if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 // Initialize GrammY Bot
 const bot = new Bot(token);
 
+const ALLOWED_USERNAME = 'VishyG07';
+
+// Access Control Middleware (only allow the owner @VishyG07)
+bot.use(async (ctx, next) => {
+  const username = ctx.from?.username;
+  if (!username || username.toLowerCase() !== ALLOWED_USERNAME.toLowerCase()) {
+    if (ctx.message) {
+      await ctx.reply('❌ *Access Denied.*\nThis is a private bot and only accepts requests from its owner.', { parse_mode: 'Markdown' });
+    }
+    return; // Block execution
+  }
+  await next(); // Proceed to handlers
+});
+
 // YouTube URL Regex
 const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
 

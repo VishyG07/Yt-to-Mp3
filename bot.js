@@ -135,13 +135,21 @@ bot.on('message:text', async (ctx) => {
     
     if (parsedUrl.pathname.includes('/playlist')) {
       isPlaylistOnly = true;
-    } else if (parsedUrl.pathname.includes('/shorts/')) {
-      const parts = parsedUrl.pathname.split('/');
-      videoId = parts[parts.indexOf('shorts') + 1];
-    } else if (parsedUrl.hostname === 'youtu.be') {
-      videoId = parsedUrl.pathname.substring(1);
     } else {
-      videoId = parsedUrl.searchParams.get('v');
+      const pathParts = parsedUrl.pathname.split('/');
+      if (pathParts.includes('shorts')) {
+        videoId = pathParts[pathParts.indexOf('shorts') + 1];
+      } else if (pathParts.includes('live')) {
+        videoId = pathParts[pathParts.indexOf('live') + 1];
+      } else if (pathParts.includes('embed')) {
+        videoId = pathParts[pathParts.indexOf('embed') + 1];
+      } else if (pathParts.includes('v')) {
+        videoId = pathParts[pathParts.indexOf('v') + 1];
+      } else if (parsedUrl.hostname === 'youtu.be') {
+        videoId = parsedUrl.pathname.substring(1);
+      } else {
+        videoId = parsedUrl.searchParams.get('v');
+      }
     }
 
     if (videoId) videoId = videoId.split(/[?#&]/)[0];

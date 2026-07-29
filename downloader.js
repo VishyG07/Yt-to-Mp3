@@ -82,7 +82,7 @@ async function getVideoInfo(url) {
   await ensureYtdlp();
   console.log(`[Downloader] Fetching metadata for: ${url}`);
   try {
-    const args = ['--dump-json', '--no-playlist'];
+    const args = ['--dump-json', '--no-playlist', '--js-runtimes', 'node'];
     
     const cookiesPath = getCookiesPath();
     if (cookiesPath) {
@@ -134,6 +134,7 @@ async function downloadAudio(url, videoId, onProgress = null) {
     '--audio-format', 'mp3',
     '--audio-quality', '128K', // Standard CBR quality to keep files under Telegram's 50MB limit
     '--no-playlist',
+    '--js-runtimes', 'node',
     '-o', outputPath
   ];
 

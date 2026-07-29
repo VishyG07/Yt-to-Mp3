@@ -307,6 +307,8 @@ async function processPlaylist(ctx, playlistId) {
       { parse_mode: 'Markdown' }
     );
 
+    let downloadedCount = 0;
+
     // Loop through tracks sequentially
     for (let i = 0; i < tracksToProcess.length; i++) {
       // Check if user requested to stop the process
@@ -314,7 +316,12 @@ async function processPlaylist(ctx, playlistId) {
         try {
           await ctx.api.deleteMessage(chatId, statusMessage.message_id);
         } catch (e) {}
-        await ctx.reply('🛑 *Playlist download stopped.*', { parse_mode: 'Markdown' });
+        await ctx.reply(
+          `🛑 *Playlist download stopped.*\n\n` +
+          `• Total tracks processed: _${i}_\n` +
+          `• Successfully sent: _${downloadedCount}_`,
+          { parse_mode: 'Markdown' }
+        );
         return;
       }
 
@@ -389,6 +396,7 @@ async function processPlaylist(ctx, playlistId) {
 
         // Send the track
         await ctx.replyWithAudio(new InputFile(mp3Path), audioOptions);
+        downloadedCount++;
 
       } catch (err) {
         console.error(`[Bot] Error downloading track ${trackIndex}:`, err);

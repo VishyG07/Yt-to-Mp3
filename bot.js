@@ -82,7 +82,7 @@ bot.callbackQuery(/^single:(.+)$/, async (ctx) => {
   try {
     await ctx.deleteMessage();
   } catch (e) {}
-  await processSingleVideo(ctx, url, videoId);
+  processSingleVideo(ctx, url, videoId).catch(e => console.error('[Bot] Async single video error:', e));
 });
 
 bot.callbackQuery(/^playlist:(.+)$/, async (ctx) => {
@@ -91,7 +91,7 @@ bot.callbackQuery(/^playlist:(.+)$/, async (ctx) => {
   try {
     await ctx.deleteMessage();
   } catch (e) {}
-  await processPlaylist(ctx, playlistId);
+  processPlaylist(ctx, playlistId).catch(e => console.error('[Bot] Async playlist error:', e));
 });
 
 // Handler for all text messages
@@ -138,9 +138,9 @@ bot.on('message:text', async (ctx) => {
     return ctx.reply('⚠️ Please send a valid YouTube video or playlist link.');
   }
 
-  // If it's a direct playlist link, process playlist immediately
   if (isPlaylistOnly || (playlistId && !videoId)) {
-    return processPlaylist(ctx, playlistId);
+    processPlaylist(ctx, playlistId).catch(e => console.error('[Bot] Async playlist error:', e));
+    return;
   }
 
   // If it has both a video ID and playlist ID, ask the user
@@ -155,9 +155,9 @@ bot.on('message:text', async (ctx) => {
     );
   }
 
-  // Standard single video download
   if (videoId) {
-    return processSingleVideo(ctx, youtubeUrl, videoId);
+    processSingleVideo(ctx, youtubeUrl, videoId).catch(e => console.error('[Bot] Async single video error:', e));
+    return;
   }
 });
 

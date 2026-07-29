@@ -92,7 +92,13 @@ async function getVideoInfo(url) {
   await ensureYtdlp();
   console.log(`[Downloader] Fetching metadata for: ${url}`);
   try {
-    const args = ['--dump-json', '--no-playlist', '--js-runtimes', 'node'];
+    const args = [
+      '--dump-json', 
+      '--no-playlist', 
+      '--js-runtimes', 'node',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--add-header', 'Referer:https://www.youtube.com'
+    ];
     
     const cookiesPath = getCookiesPath();
     if (cookiesPath) {
@@ -145,6 +151,8 @@ async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K') 
     '--audio-quality', bitrate, // Dynamic CBR quality to keep files under Telegram's 50MB limit
     '--no-playlist',
     '--js-runtimes', 'node',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    '--add-header', 'Referer:https://www.youtube.com',
     '-o', outputPath
   ];
 
@@ -234,7 +242,13 @@ async function getPlaylistInfo(url) {
   await ensureYtdlp();
   console.log(`[Downloader] Fetching playlist info for: ${url}`);
   try {
-    const args = ['--dump-single-json', '--flat-playlist', '--js-runtimes', 'node'];
+    const args = [
+      '--dump-single-json', 
+      '--flat-playlist', 
+      '--js-runtimes', 'node',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--add-header', 'Referer:https://www.youtube.com'
+    ];
     
     const cookiesPath = getCookiesPath();
     if (cookiesPath) {

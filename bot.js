@@ -372,8 +372,8 @@ async function processPlaylist(ctx, playlistId) {
         await cleanupFiles([mp3Path, thumbPath]);
       }
 
-      // 2 seconds cooldown to prevent Telegram API rate limits
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 12 seconds cooldown to prevent YouTube rate-limiting and Telegram API limits
+      await new Promise(resolve => setTimeout(resolve, 12000));
     }
 
     // Done

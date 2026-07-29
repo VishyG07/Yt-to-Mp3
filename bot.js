@@ -17,6 +17,11 @@ if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 // Initialize GrammY Bot
 const bot = new Bot(token);
 
+// Global error handler for GrammY to prevent crashes
+bot.catch((err) => {
+  console.error(`[Bot Error] Error:`, err.error);
+});
+
 const ALLOWED_USERNAMES = ['VishyG07', 'vibhavan'];
 
 // Access Control Middleware (only allow authorized users)

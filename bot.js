@@ -17,6 +17,20 @@ if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 // Initialize GrammY Bot
 const bot = new Bot(token);
 
+// Keep track of active downloading sessions
+const activeSessions = new Map();
+
+// Command: /stop
+bot.command('stop', async (ctx) => {
+  const chatId = ctx.chat.id;
+  if (activeSessions.get(chatId)) {
+    activeSessions.set(chatId, false);
+    await ctx.reply('🛑 *Stopping playlist download...* The current track will finish, and the process will stop.', { parse_mode: 'Markdown' });
+  } else {
+    await ctx.reply('⚠️ No active download process to stop.', { parse_mode: 'Markdown' });
+  }
+});
+
 // YouTube URL Regex (matches any valid youtube.com or youtu.be link)
 const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/\S+/i;
 
@@ -266,8 +280,10 @@ async function processSingleVideo(ctx, youtubeUrl, videoId) {
  * Core function to download and send an entire playlist.
  */
 async function processPlaylist(ctx, playlistId) {
+  const chatId = ctx.chat.id;
   let statusMessage;
   try {
+    activeSessions.set(chatId, true);
     statusMessage = await ctx.reply('🔍 *Fetching playlist details...*', { parse_mode: 'Markdown' });
     const playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
     const playlist = await getPlaylistInfo(playlistUrl);
@@ -293,6 +309,15 @@ async function processPlaylist(ctx, playlistId) {
 
     // Loop through tracks sequentially
     for (let i = 0; i < tracksToProcess.length; i++) {
+      // Check if user requested to stop the process
+      if (!activeSessions.get(chatId)) {
+        try {
+          await ctx.api.deleteMessage(chatId, statusMessage.message_id);
+        } catch (e) {}
+        await ctx.reply('🛑 *Playlist download stopped.*', { parse_mode: 'Markdown' });
+        return;
+      }
+
       const entry = tracksToProcess[i];
       const trackIndex = i + 1;
 
@@ -397,6 +422,8 @@ async function processPlaylist(ctx, playlistId) {
     } else {
       await ctx.reply(`❌ *Playlist download failed:*\n_${errorMessage}_`, { parse_mode: 'Markdown' });
     }
+  } finally {
+    activeSessions.delete(chatId);
   }
 }
 

@@ -483,6 +483,14 @@ async function processPlaylist(ctx, playlistId) {
     // Trigger download of yt-dlp on startup if missing
     await ensureYtdlp();
     
+    // Set bot commands menu in Telegram programmatically
+    await bot.api.setMyCommands([
+      { command: 'start', description: 'Start the bot and get instructions' },
+      { command: 'help', description: 'Show help and limitations' },
+      { command: 'stop', description: 'Instantly cancel active download' }
+    ]);
+    console.log('[Bot] Registered commands menu in Telegram.');
+
     // Start bot polling
     bot.start();
     console.log('[Bot] Bot is running and polling for updates! Press Ctrl+C to stop.');

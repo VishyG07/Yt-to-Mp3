@@ -32,6 +32,23 @@ function runExec(file, args, options = {}) {
 }
 
 /**
+ * Parses yt-dlp stderr output to return an accurate, descriptive error.
+ */
+function parseYtdlpError(error, defaultMsg) {
+  const msg = error.message || '';
+  if (msg.includes('HTTP Error 429')) {
+    return 'YouTube has blocked the server IP address (HTTP Error 429: Too Many Requests). Render\'s datacenter IP is currently blocked.';
+  } else if (msg.includes("confirm you're not a bot")) {
+    return 'YouTube is requesting verification (Sign in to confirm you\'re not a bot). Please update your cookies.';
+  } else if (msg.includes('Private video') || msg.includes('requires authentication')) {
+    return 'This YouTube video is private. Please make sure the link is public.';
+  } else if (msg.includes('Video unavailable') || msg.includes('does not exist')) {
+    return 'This YouTube video is unavailable or deleted.';
+  }
+  return `${defaultMsg}: ${msg.split('\n')[0]}`;
+}
+
+/**
  * Checks for a cookies.txt file locally or in Render's secret mount folder,
  * dynamically fixes any tab-to-space formatting errors, and uncomments HttpOnly cookies.
  */
@@ -175,7 +192,7 @@ async function getVideoInfo(url) {
     };
   } catch (error) {
     console.error('[Downloader] Error fetching metadata:', error);
-    throw new Error('Failed to retrieve video metadata. Make sure the link is correct and public.');
+    throw new Error(parseYtdlpError(error, 'Failed to retrieve video metadata'));
   }
 }
 
@@ -254,7 +271,7 @@ async function downloadAudio(url, videoId, onProgress = null, bitrate = '128K', 
         }
       } else {
         console.error(`[Downloader] yt-dlp exited with code ${code}. Error: ${errorOutput}`);
-        reject(new Error(`Failed to download and convert video. Make sure the video is available.`));
+        reject(new Error(parseYtdlpError(new Error(errorOutput), 'Failed to download and convert video')));
       }
     });
   });
@@ -338,7 +355,7 @@ async function getPlaylistInfo(url) {
     };
   } catch (error) {
     console.error('[Downloader] Error fetching playlist info:', error);
-    throw new Error('Failed to retrieve playlist details. Make sure the link is correct and public.');
+    throw new Error(parseYtdlpError(error, 'Failed to retrieve playlist details'));
   }
 }
 

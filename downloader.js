@@ -36,6 +36,11 @@ function runExec(file, args, options = {}) {
  * dynamically fixes any tab-to-space formatting errors, and uncomments HttpOnly cookies.
  */
 function getCookiesPath() {
+  if (process.env.USE_COOKIES === 'false') {
+    console.log('[Downloader] Cookies are disabled via USE_COOKIES env var.');
+    return null;
+  }
+
   const localCookies = path.join(__dirname, 'cookies.txt');
   const secretCookies = '/etc/secrets/cookies.txt';
   const fixedCookies = path.join(TEMP_DIR, 'cookies_fixed.txt');
